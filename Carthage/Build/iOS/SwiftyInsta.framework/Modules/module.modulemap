@@ -1,0 +1,11 @@
+framework module SwiftyInsta {
+  umbrella header "SwiftyInsta.h"
+
+  export *
+  module * { export * }
+}
+
+module SwiftyInsta.Swift {
+    header "SwiftyInsta-Swift.h"
+    requires objc
+}
