@@ -48,6 +48,7 @@ struct URLs {
     private static let changePassword = "/accounts/change_password/"
     private static let likeMedia = "/media/%@/like/"
     private static let unlikeMedia = "/media/%@/unlike/"
+    private static let mediaLikers = "/media/%@/likers/"
     private static let mediaComments = "/media/%@/comments/"
     private static let followUser = "/friendships/create/%ld/"
     private static let unFollowUser = "/friendships/destroy/%ld/"
@@ -71,6 +72,8 @@ struct URLs {
     private static let editBiography = "/accounts/set_biography/"
     private static let removeProfilePicture = "/accounts/remove_profile_picture/"
     private static let changeProfilePicture = "/accounts/change_profile_picture/"
+    private static let editMedia = "/media/%@/edit_media/"
+    private static let instagramCookieUrl = "https://www.instagram.com/"
     
     // MARK: - Methods
     
@@ -517,5 +520,35 @@ struct URLs {
             return url
         }
         throw CustomErrors.urlCreationFaild("Cant create URL for verify login.")
+    }
+    
+    static func getEditMediaUrl(mediaId: String) throws -> URL {
+        if let url = URL(string: String(format: "%@%@", baseInstagramApiUrl, String(format: editMedia, mediaId))) {
+            return url
+        }
+        throw CustomErrors.urlCreationFaild("Cant create URL for verify login.")
+    }
+    
+    static func getMediaLikersUrl(mediaId: String) throws -> URL {
+        if let url = URL(string: String(format: "%@%@", baseInstagramApiUrl, String(format: mediaLikers, mediaId))) {
+            return url
+        }
+        throw CustomErrors.urlCreationFaild("Cant create URL for media likers.")
+    }
+    
+    static func getInstagramCookieUrl() throws -> URL {
+        if let url = URL(string: instagramCookieUrl) {
+            return url
+        }
+        
+        throw CustomErrors.urlCreationFaild("Cant create URL for instagram cookies.")
+    }
+    
+    static func getTwoFactorLoginUrl() throws -> URL {
+        if let url = URL(string: String(format: "%@%@", baseInstagramApiUrl, accountTwoFactorLogin)) {
+            return url
+        }
+        
+        throw CustomErrors.urlCreationFaild("Cant create URL for two factor login.")
     }
 }

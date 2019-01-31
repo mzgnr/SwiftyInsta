@@ -10,10 +10,12 @@ import Foundation
 
 public protocol UserHandlerProtocol {
     func createAccount(account: CreateAccountModel, completion: @escaping (Bool) -> ()) throws
-    func login(completion: @escaping (Result<LoginResultModel>) -> ()) throws
+    func login(completion: @escaping (Result<LoginResultModel>, SessionCache?) -> ()) throws
+    func login(cache: SessionCache, completion: @escaping (Result<LoginResultModel>) -> ()) throws
+    func twoFactorLogin(verificationCode: String, useBackupCode: Bool, completion: @escaping (Result<LoginResultModel>, SessionCache?) -> ()) throws
     func challengeLogin(completion: @escaping (Result<ResponseTypes>) -> ()) throws
     func verifyMethod(of type: VerifyTypes, completion: @escaping (Result<VerifyResponse>) ->()) throws
-    func sendVerifyCode(securityCode: String, completion: @escaping (Result<LoginResultModel>) -> ()) throws
+    func sendVerifyCode(securityCode: String, completion: @escaping (Result<LoginResultModel>, SessionCache?) -> ()) throws
     func logout(completion: @escaping (Result<Bool>) -> ()) throws
     func getUser(username: String, completion: @escaping (Result<UserModel>) -> ()) throws
     func getUser(id: Int, completion: @escaping (Result<UserInfoModel>) -> ()) throws
@@ -33,20 +35,42 @@ public protocol UserHandlerProtocol {
 class UserHandler: UserHandlerProtocol {
     
     static let shared = UserHandler()
-    
+
     private init() {
         
     }
     
-    func login(completion: @escaping (Result<LoginResultModel>) -> ()) throws {
+    
+    func login(cache: SessionCache, completion: @escaping (Result<LoginResultModel>) -> ()) throws {
+        if cache.isUserAuthenticated {
+            HandlerSettings.shared.isUserAuthenticated = cache.isUserAuthenticated
+            HandlerSettings.shared.device = cache.device
+            HandlerSettings.shared.user = cache.user
+            HandlerSettings.shared.request = cache.requestMessage
+            HandlerSettings.shared.httpHelper?.setCookies(cache.cookies)
+            
+            try getCurrentUser { (result) in
+                if result.isSucceeded {
+                    completion(Return.success(value: .success))
+                } else {
+                    completion(Return.fail(error: result.info.error, response: ResponseTypes.fail, value: nil))
+                }
+            }
+        } else {
+            throw CustomErrors.runTimeError("bad cache info.")
+        }
+    }
+    
+    func login(completion: @escaping (Result<LoginResultModel>, SessionCache?) -> ()) throws {
         // sending a 'GET' request to retrieve 'CSRF' token.
         HandlerSettings.shared.httpHelper!.sendAsync(method: .get, url: try URLs.getInstagramUrl(), body: [:], header: [:]) { (data, response, error) in
             if let error = error {
-                completion(Return.fail(error: error, response: .unknown, value: nil))
+                completion(Return.fail(error: error, response: .unknown, value: nil), nil)
             } else {
                 // find CSRF token
                 let fields = response?.allHeaderFields
                 let cookies = HTTPCookie.cookies(withResponseHeaderFields: fields as! [String : String], for: (response?.url)!)
+                
                 for cookie in cookies {
                     if cookie.name == "csrftoken" {
                         HandlerSettings.shared.user!.csrfToken = cookie.value
@@ -70,7 +94,7 @@ class UserHandler: UserHandlerProtocol {
                 // send login request
                 HandlerSettings.shared.httpHelper!.sendAsync(method: .post, url: try! URLs.getLoginUrl(), body: body, header: headers, completion: { (data, response, error) in
                     if let error = error {
-                        completion(Return.fail(error: error, response: .unknown, value: nil))
+                        completion(Return.fail(error: error, response: .unknown, value: nil), nil)
                     } else {
                         let decoder = JSONDecoder()
                         decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -79,22 +103,28 @@ class UserHandler: UserHandlerProtocol {
                             if response?.statusCode != 200 {
                                 do {
                                     let loginFailReason = try decoder.decode(LoginBaseResponseModel.self, from: data)
-                                    if loginFailReason.invalidCredentials ?? false || loginFailReason.errorType! == "bad_password" {
-                                        let value = (loginFailReason.errorType == "bad_password" ? LoginResultModel.badPassword : LoginResultModel.invalidUser)
-                                        completion(Return.fail(error: CustomErrors.invalidCredentials, response: .fail, value: value))
+                                    guard let errorType = loginFailReason.errorType else { return }
+                                    if loginFailReason.invalidCredentials ?? false || errorType == "bad_password" {
+                                        let value = (errorType == "bad_password" ? LoginResultModel.badPassword : LoginResultModel.invalidUser)
+                                        completion(Return.fail(error: CustomErrors.invalidCredentials, response: .fail, value: value), nil)
                                         
                                     } else if loginFailReason.twoFactorRequired ?? false {
                                         HandlerSettings.shared.twoFactor = loginFailReason.twoFactorInfo
-                                        completion(Return.fail(error: CustomErrors.twoFactorAuthentication, response: .ok, value: .twoFactorRequired))
                                         
-                                    } else if loginFailReason.checkpointChallengeRequired ?? false || loginFailReason.errorType! == "checkpoint_challenge_required" {
+                                        if loginFailReason.twoFactorInfo?.totpTwoFactorOn == true {
+                                            completion(Return.fail(error: CustomErrors.twoFactorAuthentication, response: .totp, value: .twoFactorRequired), nil)
+                                        } else {
+                                            completion(Return.fail(error: CustomErrors.twoFactorAuthentication, response: .sms(obfuscatedPhoneNumber: loginFailReason.twoFactorInfo!.obfuscatedPhoneNumber), value: .twoFactorRequired), nil)
+                                        }
+                                        
+                                    } else if loginFailReason.checkpointChallengeRequired ?? false || errorType == "checkpoint_challenge_required" {
                                         HandlerSettings.shared.challenge = loginFailReason.challenge
-                                        completion(Return.fail(error: CustomErrors.challengeRequired, response: .ok, value: .challengeRequired))
+                                        completion(Return.fail(error: CustomErrors.challengeRequired, response: .ok, value: .challengeRequired), nil)
                                     } else {
-                                        completion(Return.fail(error: CustomErrors.unExpected(loginFailReason.errorType ?? "unexpected error type."), response: .ok, value: .exception))
+                                        completion(Return.fail(error: CustomErrors.unExpected(loginFailReason.errorType ?? "unexpected error type."), response: .ok, value: .exception), nil)
                                     }
                                 } catch {
-                                    completion(Return.fail(error: error, response: .ok, value: nil))
+                                    completion(Return.fail(error: error, response: .ok, value: nil), nil)
                                 }
                                 
                             } else {
@@ -103,14 +133,97 @@ class UserHandler: UserHandlerProtocol {
                                     HandlerSettings.shared.user!.loggedInUser = loginInfo.loggedInUser
                                     HandlerSettings.shared.isUserAuthenticated = (loginInfo.loggedInUser.username?.lowercased() == HandlerSettings.shared.user!.username.lowercased())
                                     HandlerSettings.shared.user!.rankToken = "\(HandlerSettings.shared.user!.loggedInUser.pk ?? 0)_\(HandlerSettings.shared.request!.phoneId )"
-                                    completion(Return.success(value: .success))
+                                    
+                                    let sessionCache = SessionCache.init(user: HandlerSettings.shared.user!, device: HandlerSettings.shared.device!, requestMessage: HandlerSettings.shared.request!, cookies: (HTTPCookieStorage.shared.cookies?.getInstagramCookies()?.toCookieData())!, isUserAuthenticated: true)
+                                    completion(Return.success(value: .success), sessionCache)
                                 } catch {
-                                    completion(Return.fail(error: error, response: .ok, value: nil))
+                                    completion(Return.fail(error: error, response: .ok, value: nil), nil)
                                 }
                             }
                         }
                     }
                 })
+            }
+        }
+    }
+    
+    private func getTwoFactorLoginRequestBody(verificationCode: String, verificationMethod: String) -> [String: Any] {
+        let content = [
+            "verification_code": verificationCode,
+            "_csrftoken": HandlerSettings.shared.user!.csrfToken,
+            "two_factor_identifier" : HandlerSettings.shared.twoFactor!.twoFactorIdentifier,
+            "username": HandlerSettings.shared.user!.username,
+            "guid": HandlerSettings.shared.device!.deviceGuid.uuidString,
+            "device_id":  RequestMessageModel.generateDeviceIdFromGuid(guid: HandlerSettings.shared.device!.deviceGuid),
+            "verification_method": verificationMethod
+        ]
+        
+        let encoder = JSONEncoder()
+        let payload = String(data: try! encoder.encode(content), encoding: .utf8)!
+        print("\n\n" + payload + "\n\n")
+        let hash = payload.hmac(algorithm: .SHA256, key: Headers.HeaderIGSignatureValue)
+        
+        let signature = "\(hash).\(payload)"
+        let body: [String: Any] = [
+            Headers.HeaderIGSignatureKey: signature.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)!,
+            Headers.HeaderIGSignatureVersionKey: Headers.HeaderIGSignatureVersionValue
+        ]
+        
+        return body
+    }
+    
+    func twoFactorLogin(verificationCode: String, useBackupCode: Bool, completion: @escaping (Result<LoginResultModel>, SessionCache?) -> ()) throws {
+        var verificationMethod = TwoFactorVerificationMethodsEnum.none.rawValue
+        
+        if useBackupCode {
+            verificationMethod = TwoFactorVerificationMethodsEnum.backup.rawValue
+        } else if HandlerSettings.shared.twoFactor?.totpTwoFactorOn == true {
+            verificationMethod = TwoFactorVerificationMethodsEnum.totp.rawValue
+        } else if HandlerSettings.shared.twoFactor?.smsTwoFactorOn == true {
+            verificationMethod = TwoFactorVerificationMethodsEnum.sms.rawValue
+        }
+        
+        let body = getTwoFactorLoginRequestBody(verificationCode: verificationCode, verificationMethod: verificationMethod)
+        
+        HandlerSettings.shared.httpHelper!.sendAsync(method: .post, url: try! URLs.getTwoFactorLoginUrl(), body: body, header: [:]) { (data, response, error) in
+            if let error = error {
+                completion(Return.fail(error: error, response: .unknown, value: nil), nil)
+            } else {
+                let decoder = JSONDecoder()
+                decoder.keyDecodingStrategy = .convertFromSnakeCase
+                
+                if let data = data {
+                    print(String(data: data, encoding: .utf8)!)
+                    if response?.statusCode != 200 {
+                        do {
+                            let loginFailReason = try decoder.decode(LoginBaseResponseModel.self, from: data)
+                            guard let errorType = loginFailReason.errorType else { return }
+                            if errorType == TwoFactorLoginErrorTypeEnum.invalidCode.rawValue {
+                                completion(Return.fail(error: CustomErrors.invalidTwoFactorCode, response: .fail, value: nil), nil)
+                            } else if errorType == TwoFactorLoginErrorTypeEnum.missingCode.rawValue {
+                                completion(Return.fail(error: CustomErrors.missingTwoFactorCode, response: .fail, value: nil), nil)
+                            } else {
+                                completion(Return.fail(error: CustomErrors.unExpected("unExpected Error"), response: .fail, value: nil), nil)
+                            }
+                        } catch {
+                            completion(Return.fail(error: error, response: .ok, value: nil), nil)
+                        }
+                    } else {
+                        do {
+                            let loginInfo = try decoder.decode(LoginResponseModel.self, from: data)
+                            HandlerSettings.shared.user!.loggedInUser = loginInfo.loggedInUser
+                            HandlerSettings.shared.isUserAuthenticated = (loginInfo.loggedInUser.username?.lowercased() == HandlerSettings.shared.user!.username.lowercased())
+                            HandlerSettings.shared.user!.rankToken = "\(HandlerSettings.shared.user!.loggedInUser.pk ?? 0)_\(HandlerSettings.shared.request!.phoneId )"
+                            
+                            let sessionCache = SessionCache.init(user: HandlerSettings.shared.user!, device: HandlerSettings.shared.device!, requestMessage: HandlerSettings.shared.request!, cookies: (HTTPCookieStorage.shared.cookies?.getInstagramCookies()?.toCookieData())!, isUserAuthenticated: true)
+                            completion(Return.success(value: .success), sessionCache)
+                        } catch {
+                            completion(Return.fail(error: error, response: .ok, value: nil), nil)
+                        }
+                    }
+                } else {
+                    print("NO DATA")
+                }
             }
         }
     }
@@ -165,7 +278,7 @@ class UserHandler: UserHandlerProtocol {
         }
     }
     
-    func sendVerifyCode(securityCode: String, completion: @escaping (Result<LoginResultModel>) -> ()) throws {
+    func sendVerifyCode(securityCode: String, completion: @escaping (Result<LoginResultModel>, SessionCache?) -> ()) throws {
         let body: [String: Any] = [
             "security_code": securityCode,
             "_csrftoken": HandlerSettings.shared.user!.csrfToken,
@@ -177,7 +290,7 @@ class UserHandler: UserHandlerProtocol {
         let url = try URLs.getVerifyLoginUrl(challenge: HandlerSettings.shared.challenge!.apiPath)
         HandlerSettings.shared.httpHelper!.sendAsync(method: .post, url: url, body: body, header: header) { (data, response, error) in
             if let error = error {
-                completion(Return.fail(error: error, response: .fail, value: .responseError))
+                completion(Return.fail(error: error, response: .fail, value: .responseError), nil)
             } else {
                 if let data = data {
                     let decoder = JSONDecoder()
@@ -188,13 +301,15 @@ class UserHandler: UserHandlerProtocol {
                             HandlerSettings.shared.user!.loggedInUser = loginInfo.loggedInUser
                             HandlerSettings.shared.isUserAuthenticated = (loginInfo.loggedInUser.username?.lowercased() == HandlerSettings.shared.user!.username.lowercased())
                             HandlerSettings.shared.user!.rankToken = "\(HandlerSettings.shared.user!.loggedInUser.pk ?? 0)_\(HandlerSettings.shared.request!.phoneId )"
-                            completion(Return.success(value: .success))
+                            let sessionCache = SessionCache.init(user: HandlerSettings.shared.user!, device: HandlerSettings.shared.device!, requestMessage: HandlerSettings.shared.request!, cookies: (HTTPCookieStorage.shared.cookies?.getInstagramCookies()?.toCookieData())!, isUserAuthenticated: true)
+
+                            completion(Return.success(value: .success), sessionCache)
                         } else {
                             let error = CustomErrors.runTimeError("Please check the code we sent you and try again.")
-                            completion(Return.fail(error: error, response: .fail, value: .badSecurityCode))
+                            completion(Return.fail(error: error, response: .fail, value: .badSecurityCode), nil)
                         }
                     } catch {
-                        completion(Return.fail(error: error, response: .ok, value: .exception))
+                        completion(Return.fail(error: error, response: .ok, value: .exception), nil)
                     }
                 }
             }
@@ -508,18 +623,22 @@ class UserHandler: UserHandlerProtocol {
             if let error = error {
                 completion(Return.fail(error: error, response: .fail, value: nil))
             } else {
-                if let data = data {
-                    let decoder = JSONDecoder()
-                    decoder.keyDecodingStrategy = .convertFromSnakeCase
-                    do {
-                        let currentUser = try decoder.decode(CurrentUserModel.self, from: data)
-                        completion(Return.success(value: currentUser))
-                    } catch {
+                if response?.statusCode == 200 {
+                    if let data = data {
+                        let decoder = JSONDecoder()
+                        decoder.keyDecodingStrategy = .convertFromSnakeCase
+                        do {
+                            let currentUser = try decoder.decode(CurrentUserModel.self, from: data)
+                            completion(Return.success(value: currentUser))
+                        } catch {
+                            completion(Return.fail(error: error, response: .ok, value: nil))
+                        }
+                    } else {
+                        let error = CustomErrors.runTimeError("The data couldn’t be read because it is missing error when decoding JSON.")
                         completion(Return.fail(error: error, response: .ok, value: nil))
                     }
                 } else {
-                    let error = CustomErrors.runTimeError("The data couldn’t be read because it is missing error when decoding JSON.")
-                    completion(Return.fail(error: error, response: .ok, value: nil))
+                    completion(Return.fail(error: error, response: .loginRequired, value: nil))
                 }
             }
         }
