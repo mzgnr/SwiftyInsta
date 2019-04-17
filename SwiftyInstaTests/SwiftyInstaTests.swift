@@ -54,7 +54,7 @@ class SwiftyInstaTests: XCTestCase {
         })
         
         let exp = expectation(description: "login() faild during timeout")
-        let user = SessionStorage.create(username: "swiftyinsta", password: "uuuuuu")
+        let user = SessionStorage.create(username: "swiftyinsta", password: "***")
         let userAgent = CustomUserAgent(apiVersion: "79.0.0.0", osName: "iOS", osVersion: "12", osRelease: "1.4", dpi: "458", resolution: "2688x1242", company: "Apple", model: "iPhone11,2", modem: "intel", locale: "en_US", fbCode: "95414346")
         HttpSettings.shared.addValue(userAgent.toString(), forHTTPHeaderField: Headers.HeaderUserAgentKey)
         let urlSession = URLSession(configuration: .default)
@@ -95,7 +95,7 @@ class SwiftyInstaTests: XCTestCase {
                 self.logoutAfterTest = true
                 
                 // FIXME: 'test function' you want to run after login.
-                self.testGetUser(handler: handler)
+                self.testGetStoryViewers(handler: handler)
             }
         }
     }
@@ -186,6 +186,23 @@ class SwiftyInstaTests: XCTestCase {
 //                self.testLogout(handler: handler)
 //            }
         }
+    }
+    
+    func testSearch(username: String, handler: APIHandlerProtocol) {
+        let exp = expectation(description: "testSearch() faild during timeout")
+        do {
+            try handler.searchUser(username: username, completion: { (result) in
+                if result.isSucceeded {
+                    result.value?.compactMap { print("username: ", $0.username )}
+                }
+                
+                exp.fulfill()
+            })
+        } catch {
+            print("Error: ", error)
+            exp.fulfill()
+        }
+        waitForExpectations(timeout: 60, handler: nil)
     }
     
     func testLogout(handler: APIHandlerProtocol) {
@@ -572,7 +589,7 @@ class SwiftyInstaTests: XCTestCase {
     func testGetUserMedia(handler: APIHandlerProtocol) {
         let exp = expectation(description: "getUserMedia() faild during timeout")
         do {
-            try handler.getUserMedia(for: "swiftyinsta", paginationParameter: PaginationParameters.maxPagesToLoad(maxPages: 5)) { (result) in
+            try handler.getUserMedia(for: "apple", paginationParameter: PaginationParameters.maxPagesToLoad(maxPages: 1)) { (result) in
                 if result.isSucceeded {
                     print(result.value!)
                     print("[+] number of pages that include medias: \(result.value!.count)")
@@ -1211,7 +1228,7 @@ class SwiftyInstaTests: XCTestCase {
     func testGetUserStory(handler: APIHandlerProtocol) {
         let exp = expectation(description: "getUserStory() faild during timeout")
         do {
-            try handler.getUser(username: "username", completion: { (user) in
+            try handler.getUser(username: "swiftyinsta", completion: { (user) in
                 
                 // Test Get Story Reel
 //                try? handler.getUserStoryReelFeed(userId: user.value!.pk!, completion: { (result) in
@@ -1219,6 +1236,7 @@ class SwiftyInstaTests: XCTestCase {
 //                })
                 
                 try? handler.getUserStory(userId: user.value!.pk!, completion: { (result) in
+                    print(result.value!)
                     exp.fulfill()
                 })
                 
@@ -1235,6 +1253,26 @@ class SwiftyInstaTests: XCTestCase {
             print("[-] \(error.localizedDescription)")
             exp.fulfill()
         }
+        
+        waitForExpectations(timeout: 60) { (err) in
+            if let err = err {
+                fatalError(err.localizedDescription)
+            }
+            
+            if self.logoutAfterTest {
+                self.testLogout(handler: handler)
+            }
+        }
+    }
+    
+    func testGetStoryViewers(handler: APIHandlerProtocol) {
+        let exp = expectation(description: "testGetStoryViewers() faild during timeout")
+        let storyPk = "2022853344112336157"
+        
+        try! handler.getStoryViewers(storyPk: storyPk, completion: { (result) in
+            result.value!.users!.forEach{ print($0.username!) }
+            exp.fulfill()
+        })
         
         waitForExpectations(timeout: 60) { (err) in
             if let err = err {

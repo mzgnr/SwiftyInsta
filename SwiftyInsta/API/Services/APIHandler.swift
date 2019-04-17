@@ -117,6 +117,16 @@ public class APIHandler: APIHandlerProtocol {
         }
     }
     
+    public func searchUser(username: String, completion: @escaping (Result<[UserModel]>) -> ()) throws {
+        // validate before logout.
+        try validateUser()
+        try validateLoggedIn()
+        
+        try UserHandler.shared.searchUser(username: username, completion: { (result) in
+            completion(result)
+        })
+    }
+    
     public func getUser(username: String, completion: @escaping (Result<UserModel>) -> ()) throws {
         // validate before logout.
         try validateUser()
@@ -523,6 +533,16 @@ public class APIHandler: APIHandlerProtocol {
         try validateLoggedIn()
         
         try StoryHandler.shared.uploadStoryPhoto(photo: photo, completion: { (result) in
+            completion(result)
+        })
+    }
+    
+    public func getStoryViewers(storyPk: String?, completion: @escaping (Result<StoryViewers>) -> ()) throws {
+        // validate before request.
+        try validateUser()
+        try validateLoggedIn()
+        
+        try StoryHandler.shared.getStoryViewers(storyPk: storyPk, completion: { (result) in
             completion(result)
         })
     }
