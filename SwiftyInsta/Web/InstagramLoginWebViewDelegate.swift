@@ -2,7 +2,7 @@
 //  InstagramLoginWebView.swift
 //  SwiftyInsta
 //
-//  Created by Sehmus GOKCE on 15.04.2019. https://github.com/freeman4706
+//  Created by Sehmus GOKCE on 15.04.2019. (freeman4706@github)
 //  Copyright © 2019 Mahdi. All rights reserved.
 //
 
@@ -51,8 +51,19 @@ public class InstagramLoginWebView: WKCookieWebView {
     
     public func loadInstagramLogin(isNeedPreloadForCookieSync : Bool) {
         self.deleteAllCookies()
-        self.customUserAgent = "(Linux; Android 5.0; iPhone Build/LRX21T) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Mobile Safari/537.36"
         let urlString = "https://www.instagram.com/accounts/login/"
+        
+        // in some iOS versions, use-agent needs to be different.
+        // this use-agent works on iOS 11.4 and iOS 12.0+
+        // but it won't work on lower versions.
+        if #available(iOS 12.0, *) {
+            self.customUserAgent = "(Linux; Android 5.0; iPhone Build/LRX21T) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Mobile Safari/537.36"
+        } else if #available(iOS 11.4, *) {
+            self.customUserAgent = "(Linux; Android 5.0; iPhone Build/LRX21T) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Mobile Safari/537.36"
+            //self.customUserAgent = "(Linux; Android 4.4.2; SCH-I545 Build/KOT49H) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.111 Mobile Safari/537.36"
+        } else {
+            self.customUserAgent = "(Linux; Android 4.4.2; SCH-I545 Build/KOT49H) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.111 Mobile Safari/537.36"
+        }
         
         if isNeedPreloadForCookieSync {
             WKCookieWebView.preloadWithDomainForCookieSync(urlString: urlString) { [weak self] in
@@ -118,9 +129,24 @@ public class InstagramLoginWebView: WKCookieWebView {
     }
     
     public func deleteAllCookies() {
+        
+        self.cleanEveryThing()
+        
         fetchCookies { (cookies) in
             for cookie in cookies! {
                 self.delete(cookie: cookie)
+            }
+        }
+    }
+    
+    func cleanEveryThing() {
+        HTTPCookieStorage.shared.removeCookies(since: Date.distantPast)
+        print("[WebCacheCleaner] All cookies deleted")
+        
+        WKWebsiteDataStore.default().fetchDataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes()) { records in
+            records.forEach { record in
+                WKWebsiteDataStore.default().removeData(ofTypes: record.dataTypes, for: [record], completionHandler: {})
+                print("[WebCacheCleaner] Record \(record) deleted")
             }
         }
     }
@@ -152,9 +178,9 @@ public class InstagramLoginWebView: WKCookieWebView {
         self.fetchCookies(completion: { (cookies) in
             let instagramCookies =  cookies?.getInstagramCookies()
             
-            for cookie in instagramCookies! {
-                print(cookie)
-            }
+            //            for cookie in instagramCookies! {
+            //                print(cookie)
+            //            }
             
             self.isUserLoggedIn(instagramCookies: instagramCookies!)
         })
