@@ -52,9 +52,15 @@ struct URLs {
     private static let unlikeMedia = "/media/%@/unlike/"
     private static let mediaLikers = "/media/%@/likers/"
     private static let mediaComments = "/media/%@/comments/"
+    private static let removeFollower = "/friendships/remove_follower/%ld/"
+    private static let rejectFriendship = "/friendships/ignore/%ld/"
+    private static let approveFriendship = "/friendships/approve/%ld/"
+    private static let pendingFriendships = "/friendships/pending/"
     private static let followUser = "/friendships/create/%ld/"
     private static let unFollowUser = "/friendships/destroy/%ld/"
     private static let friendshipStatus = "/friendships/show/%ld"
+    private static let friendshipStatuses = "/friendships/show_many/"
+    private static let blockedList = "/users/blocked_list/"
     private static let blockUser = "/friendships/block/%ld/"
     private static let unBlockUser = "/friendships/unblock/%ld/"
     private static let userTags = "/usertags/%ld/feed/"
@@ -343,6 +349,34 @@ struct URLs {
         throw CustomErrors.urlCreationFaild("Cant create URL for get media comments.")
     }
     
+    static func removeFollowerUrl(for user: Int) throws -> URL {
+        if let url = URL(string: String(format: "%@%@", baseInstagramApiUrl, String(format: removeFollower, user))) {
+            return url
+        }
+        throw CustomErrors.urlCreationFaild("Cant create URL for remove follower.")
+    }
+    
+    static func approveFriendshipUrl(for user: Int) throws -> URL {
+        if let url = URL(string: String(format: "%@%@", baseInstagramApiUrl, String(format: approveFriendship, user))) {
+            return url
+        }
+        throw CustomErrors.urlCreationFaild("Cant create URL for approve friendship.")
+    }
+    
+    static func rejectFriendshipUrl(for user: Int) throws -> URL {
+        if let url = URL(string: String(format: "%@%@", baseInstagramApiUrl, String(format: rejectFriendship, user))) {
+            return url
+        }
+        throw CustomErrors.urlCreationFaild("Cant create URL for reject friendship.")
+    }
+
+    static func pendingFriendshipsUrl() throws -> URL {
+        if let url = URL(string: String(format: "%@%@", baseInstagramApiUrl, pendingFriendships)) {
+            return url
+        }
+        throw CustomErrors.urlCreationFaild("Cant create URL for pending friendships.")
+    }
+    
     static func getFollowUrl(for user: Int) throws -> URL {
         if let url = URL(string: String(format: "%@%@", baseInstagramApiUrl, String(format: followUser, user))) {
             return url
@@ -362,6 +396,20 @@ struct URLs {
             return url
         }
         throw CustomErrors.urlCreationFaild("Cant create URL for friendship status.")
+    }
+    
+    static func getFriendshipStatusesUrl() throws -> URL {
+        if let url = URL(string: String(format: "%@%@", baseInstagramApiUrl, friendshipStatuses)) {
+            return url
+        }
+        throw CustomErrors.urlCreationFaild("Cant create URL for current user.")
+    }
+    
+    static func getBlockedList() throws -> URL {
+        if let url = URL(string: String(format: "%@%@", baseInstagramApiUrl, blockedList)) {
+            return url
+        }
+        throw CustomErrors.urlCreationFaild("Cant create URL for blockedList.")
     }
     
     static func getBlockUrl(for user: Int) throws -> URL {

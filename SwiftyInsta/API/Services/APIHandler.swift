@@ -367,6 +367,44 @@ public class APIHandler: APIHandlerProtocol {
         })
     }
     
+    public func removeFollower(userId: Int, completion: @escaping (Result<FollowResponseModel>) -> ()) throws {
+        try validateUser()
+        try validateLoggedIn()
+        
+        try UserHandler.shared.removeFollower(userId: userId, completion: { (result) in
+            completion(result)
+        })
+    }
+    
+    public func approveFriendship(userId: Int, completion: @escaping (Result<FollowResponseModel>) -> ()) throws {
+        try validateUser()
+        try validateLoggedIn()
+        
+        try UserHandler.shared.approveFriendship(userId: userId, completion: { (result) in
+            completion(result)
+        })
+
+    }
+    
+    public func rejectFriendship(userId: Int, completion: @escaping (Result<FollowResponseModel>) -> ()) throws {
+        try validateUser()
+        try validateLoggedIn()
+        
+        try UserHandler.shared.rejectFriendship(userId: userId, completion: { (result) in
+            completion(result)
+        })
+
+    }
+    
+    public func pendingFriendships(completion: @escaping (Result<PendingFriendshipsModel>) -> ()) throws {
+        try validateUser()
+        try validateLoggedIn()
+        
+        try UserHandler.shared.pendingFriendships(completion: { (result) in
+            completion(result)
+        })
+    }
+    
     public func followUser(userId: Int, completion: @escaping (Result<FollowResponseModel>) -> ()) throws {
         // validate before request.
         try validateUser()
@@ -395,6 +433,25 @@ public class APIHandler: APIHandlerProtocol {
         try UserHandler.shared.getFriendshipStatus(of: userId) { (result) in
             completion(result)
         }
+    }
+    
+    public func getFriendshipStatuses(of userIds: [Int], completion: @escaping (Result<FriendshipStatusesModel>) -> ()) throws {
+        try validateUser()
+        try validateLoggedIn()
+        
+        try UserHandler.shared.getFriendshipStatuses(of: userIds) { (result) in
+            completion(result)
+        }
+        
+    }
+    
+    public func getBlockedList(completion: @escaping (Result<BlockedUsersModel>) -> ()) throws {
+        try validateUser()
+        try validateLoggedIn()
+        
+        try UserHandler.shared.getBlockedList(completion: { (result) in
+            completion(result)
+        })
     }
     
     public func block(userId: Int, completion: @escaping (Result<FollowResponseModel>) -> ()) throws {
